@@ -9,7 +9,7 @@ using OoLunar.Willow.Models;
 using OoLunar.Willow.Models.Actions;
 using OoLunar.Willow.Payloads;
 
-namespace OoLunar.Willow.Server.Actions
+namespace OoLunar.Willow.Server.Models.Actions
 {
     public sealed class AlterSettingsServerAction : AlterSettingsAction, IServerAction
     {
@@ -19,15 +19,14 @@ namespace OoLunar.Willow.Server.Actions
 
         public AlterSettingsServerAction(UserModel newModel) : base(newModel) { }
 
-        public Task InjectDependencies(UserModel currentUser, QuicConnection connection, QuicStream stream, IServiceProvider serviceProvider, CancellationToken cancellationToken)
+        public void InjectDependencies(UserModel currentUser, QuicConnection connection, QuicStream stream, IServiceProvider serviceProvider)
         {
             _currentUser = currentUser;
             _stream = stream;
             _database = serviceProvider.GetRequiredService<DatabaseContext>();
-            return Task.CompletedTask;
         }
 
-        public override async Task Execute()
+        public override async Task ExecuteAsync(CancellationToken cancellationToken = default)
         {
             if (_currentUser.Id != NewModel.Id && !NewModel.Flags.HasFlag(UserFlags.Admin))
             {

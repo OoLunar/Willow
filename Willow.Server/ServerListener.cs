@@ -6,8 +6,8 @@ using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -15,14 +15,14 @@ namespace OoLunar.Willow.Server
 {
     public class ServerListener : BackgroundService
     {
-        private readonly IDbContextFactory<DatabaseContext> _databaseFactory;
+        private readonly IServiceProvider _serviceProvider;
         private readonly IConfiguration _configuration;
         private readonly ILogger<ServerListener> _logger;
         private QuicListener? _listener;
 
-        public ServerListener(IDbContextFactory<DatabaseContext> factory, IConfiguration configuration, ILogger<ServerListener> logger)
+        public ServerListener(IServiceProvider serviceProvider, IConfiguration configuration, ILogger<ServerListener> logger)
         {
-            _databaseFactory = factory ?? throw new ArgumentNullException(nameof(factory));
+            _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             if (!QuicListener.IsSupported)
@@ -68,7 +68,7 @@ namespace OoLunar.Willow.Server
                 // TODO: Not Task.Run lmao
                 try
                 {
-                    Task.Run(() => new StreamHandler(_databaseFactory.CreateDbContext(), connection).HelloAsync(stoppingToken), stoppingToken).Start();
+                    Task.Run(() => new StreamHandler(_serviceProvider, _serviceProvider.GetRequiredService<DatabaseContext>(), connection).HelloAsync(stoppingToken), stoppingToken).Start();
                 }
                 catch (Exception error)
                 {

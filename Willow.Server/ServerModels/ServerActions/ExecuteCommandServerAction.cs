@@ -14,7 +14,7 @@ using OoLunar.Willow.Models;
 using OoLunar.Willow.Models.Actions;
 using OoLunar.Willow.Payloads;
 
-namespace OoLunar.Willow.Server.Actions
+namespace OoLunar.Willow.Server.Models.Actions
 {
     public sealed class ExecuteCommandServerAction : ExecuteCommandAction, IServerAction
     {
@@ -22,21 +22,18 @@ namespace OoLunar.Willow.Server.Actions
         private QuicConnection _connection = null!;
         private QuicStream _stream = null!;
         private DatabaseContext _database = null!;
-        private CancellationToken _cancellationToken = CancellationToken.None;
 
         public ExecuteCommandServerAction(Ulid commandId, Dictionary<string, string>? arguments) : base(commandId, arguments) { }
 
-        public Task InjectDependencies(UserModel currentUser, QuicConnection connection, QuicStream stream, IServiceProvider serviceProvider, CancellationToken cancellationToken)
+        public void InjectDependencies(UserModel currentUser, QuicConnection connection, QuicStream stream, IServiceProvider serviceProvider)
         {
             _currentUser = currentUser;
             _connection = connection;
             _stream = stream;
             _database = serviceProvider.GetRequiredService<DatabaseContext>();
-            _cancellationToken = cancellationToken;
-            return Task.CompletedTask;
         }
 
-        public override async Task Execute()
+        public override async Task ExecuteAsync(CancellationToken cancellationToken = default)
         {
             CommandModel? command = await _database.Commands.FirstOrDefaultAsync(command => command.CommandId == CommandId && command.UserId == _currentUser.Id, CancellationToken.None);
             if (command == null)
@@ -59,12 +56,12 @@ namespace OoLunar.Willow.Server.Actions
                 }
             };
 
-            CancellationTokenSource cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken);
+            CancellationTokenSource cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             if (command.Flags.HasFlag(CommandFlags.SendOutput))
             {
                 QuicStream quicStream = await _connection.OpenOutboundStreamAsync(QuicStreamType.Bidirectional, cancellationTokenSource.Token);
-                process.OutputDataReceived += async (sender, data) => await CopyToStreamAsync(quicStream, data.Data, _cancellationToken);
-                process.ErrorDataReceived += async (sender, data) => await CopyToStreamAsync(quicStream, data.Data, _cancellationToken);
+                process.OutputDataReceived += async (sender, data) => await CopyToStreamAsync(quicStream, data.Data, cancellationToken);
+                process.ErrorDataReceived += async (sender, data) => await CopyToStreamAsync(quicStream, data.Data, cancellationToken);
 
                 while (!cancellationTokenSource.IsCancellationRequested)
                 {

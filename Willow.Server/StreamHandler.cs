@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using OoLunar.Willow.Models;
 using OoLunar.Willow.Models.Actions;
 using OoLunar.Willow.Payloads;
-using OoLunar.Willow.Server.Actions;
+using OoLunar.Willow.Server.Models;
 
 namespace OoLunar.Willow.Server
 {
@@ -28,6 +28,11 @@ namespace OoLunar.Willow.Server
         /// The QUIC connection tied to this stream handler.
         /// </summary>
         public QuicConnection Connection { get; init; }
+
+        /// <summary>
+        /// Used when creating actions.
+        /// </summary>
+        public IServiceProvider ServiceProvider { get; init; }
 
         /// <summary>
         /// One of many streams tied to a singular connection.
@@ -56,8 +61,9 @@ namespace OoLunar.Willow.Server
         /// </summary>
         /// <param name="database">The database used to grab the user's information.</param>
         /// <param name="connection">The QUIC connection to handle.</param>
-        public StreamHandler(DatabaseContext database, QuicConnection connection)
+        public StreamHandler(IServiceProvider serviceProvider, DatabaseContext database, QuicConnection connection)
         {
+            ServiceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
             Database = database ?? throw new ArgumentNullException(nameof(database));
             Connection = connection ?? throw new ArgumentNullException(nameof(connection));
         }
@@ -80,7 +86,7 @@ namespace OoLunar.Willow.Server
 
             await JsonSerializer.SerializeAsync(Stream, new HelloPayload(), cancellationToken: CancellationToken.None);
             HelloModel? helloModel = await DeserializeAsync<HelloModel>();
-            if (helloModel == null)
+            if (helloModel is null)
             {
                 Database.Logins.Add(new LoginModel(null, null, Connection.RemoteEndPoint, DateTimeOffset.UtcNow, false));
                 await ErrorAndCloseAsync(CloseCode.InvalidHello, "Hello was null");
@@ -100,7 +106,7 @@ namespace OoLunar.Willow.Server
         /// <remarks>The login process shouldn't be interrupted. We first test if the cancellation token is cancelled before we start authenticating the user. If it is, send the close code. If it isn't, authenticate the user and pass the cancellation token to the idle method.</remarks>
         public async Task LoginAsync(HelloModel hello, CancellationToken cancellationToken = default)
         {
-            if (Stream == null)
+            if (Stream is null)
             {
                 throw new InvalidOperationException("Stream is null");
             }
@@ -111,7 +117,7 @@ namespace OoLunar.Willow.Server
             }
 
             User = await Database.Users.FirstOrDefaultAsync(user => user.Id == hello.Id, CancellationToken.None);
-            if (User == null)
+            if (User is null)
             {
                 Database.Logins.Add(new LoginModel(hello.Id, hello.UserAgent, Connection.RemoteEndPoint, DateTimeOffset.UtcNow, false));
                 await ErrorAndCloseAsync(CloseCode.InvalidLogin, "User does not exist");
@@ -144,11 +150,11 @@ namespace OoLunar.Willow.Server
         /// <param name="cancellationToken">Used to close the connection.</param>
         public async Task IdleAsync(CancellationToken cancellationToken = default)
         {
-            if (Stream == null)
+            if (Stream is null)
             {
                 throw new InvalidOperationException("Stream is null");
             }
-            else if (User == null)
+            else if (User is null)
             {
                 throw new InvalidOperationException("User is null");
             }
@@ -157,20 +163,26 @@ namespace OoLunar.Willow.Server
 
             while (!cancellationToken.IsCancellationRequested)
             {
-                ActionModel? action = await DeserializeAsync<ActionModel>();
-                if (action is null || !Actions.TryGetValue(action?.Action ?? 0, out Type? actionType))
+                ServerActionModel? action = await DeserializeAsync<ServerActionModel>();
+                if (action is null || !Actions.TryGetValue(action.Action, out Type? actionType))
                 {
                     await JsonSerializer.SerializeAsync(Stream, new ErrorPayload(ErrorCode.InvalidAction, $"Unknown action type: {(int?)action?.Action}", action), cancellationToken: CancellationToken.None);
-                    return;
+                    continue;
                 }
-                else if (actionType != null && actionType.IsSubclassOf(action!.Data!.GetType()))
+                else if (action.Data is null)
                 {
-                    IServerAction? serverAction = (IServerAction?)Activator.CreateInstance(actionType);
-                    if (serverAction is null)
-                    {
-                        await JsonSerializer.SerializeAsync(Stream, new ErrorPayload(ErrorCode.ServerError, $"Failed to correctly handle action type: {(int?)action?.Action}", action), cancellationToken: CancellationToken.None);
-                        return;
-                    }
+                    await JsonSerializer.SerializeAsync(Stream, new ErrorPayload(ErrorCode.InvalidData, "Data cannot be null", action), cancellationToken: CancellationToken.None);
+                    continue;
+                }
+                else if (actionType is null || !actionType.IsSubclassOf(action.Data.GetType()))
+                {
+                    await JsonSerializer.SerializeAsync(Stream, new ErrorPayload(ErrorCode.ServerError, $"Failed to correctly handle action type: {(int?)action?.Action}", action), cancellationToken: CancellationToken.None);
+                    continue;
+                }
+                else // else for scope
+                {
+                    action.Data.InjectDependencies(User, Connection, Stream, ServiceProvider);
+                    await action.Data.ExecuteAsync(cancellationToken);
                 }
             }
         }
@@ -183,7 +195,7 @@ namespace OoLunar.Willow.Server
         /// <param name="cancellationToken">Unsure.</param>
         private async Task ErrorAndCloseAsync(CloseCode errorCode, string? message = null)
         {
-            if (Stream == null)
+            if (Stream is null)
             {
                 throw new InvalidOperationException("Stream is null");
             }
@@ -195,7 +207,7 @@ namespace OoLunar.Willow.Server
 
         private ValueTask<T?> DeserializeAsync<T>()
         {
-            if (Stream == null)
+            if (Stream is null)
             {
                 throw new InvalidOperationException("Stream is null");
             }
