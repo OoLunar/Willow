@@ -6,31 +6,29 @@ using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using OoLunar.Willow.Database;
-using OoLunar.Willow.Net;
 
-namespace OoLunar.Willow
+namespace OoLunar.Willow.Server
 {
     public class ServerListener : BackgroundService
     {
-        private readonly DatabaseFactory _databaseFactory;
+        private readonly IDbContextFactory<DatabaseContext> _databaseFactory;
         private readonly IConfiguration _configuration;
         private readonly ILogger<ServerListener> _logger;
         private QuicListener? _listener;
 
-        public ServerListener(DatabaseFactory factory, IConfiguration configuration, ILogger<ServerListener> logger)
+        public ServerListener(IDbContextFactory<DatabaseContext> factory, IConfiguration configuration, ILogger<ServerListener> logger)
         {
             _databaseFactory = factory ?? throw new ArgumentNullException(nameof(factory));
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-
             if (!QuicListener.IsSupported)
             {
-                _logger.LogError("QUIC is not supported on this platform.");
-                throw new PlatformNotSupportedException("QUIC is not supported on this platform.");
+                _logger.LogCritical("QuicListener is not supported on this platform.");
+                throw new NotSupportedException("QUIC is not supported on this platform.");
             }
         }
 
@@ -68,7 +66,14 @@ namespace OoLunar.Willow
             {
                 QuicConnection connection = await _listener.AcceptConnectionAsync(stoppingToken);
                 // TODO: Not Task.Run lmao
-                _ = Task.Run(() => new StreamHandler(_databaseFactory.CreateDbContext(Array.Empty<string>()), connection).HelloAsync(stoppingToken), stoppingToken);
+                try
+                {
+                    Task.Run(() => new StreamHandler(_databaseFactory.CreateDbContext(), connection).HelloAsync(stoppingToken), stoppingToken).Start();
+                }
+                catch (Exception error)
+                {
+                    _logger.LogError(error, "Error while handling connection from {ConnectionEndPoint}", connection.RemoteEndPoint);
+                }
             }
         }
     }

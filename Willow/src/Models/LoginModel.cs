@@ -1,7 +1,7 @@
 using System;
 using System.Net;
 
-namespace OoLunar.Willow.Database.Models
+namespace OoLunar.Willow.Models
 {
     public sealed class LoginModel
     {

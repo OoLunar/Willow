@@ -1,12 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using OoLunar.Willow.Database;
 
-namespace OoLunar.Willow
+namespace OoLunar.Willow.Server
 {
     public sealed class Program
     {
-        private static void Main(string[] args)
+        public static void Main(string[] args)
         {
             IHost host = Host.CreateDefaultBuilder(args)
                 .ConfigureServices(services => services

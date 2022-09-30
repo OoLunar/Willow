@@ -1,6 +1,6 @@
 using System;
 
-namespace OoLunar.Willow.Net.Payloads
+namespace OoLunar.Willow.Payloads
 {
     public sealed class ClosePayload
     {
@@ -19,6 +19,6 @@ namespace OoLunar.Willow.Net.Payloads
     {
         ServerShutdown,
         InvalidHello,
-        InvalidLogin,
+        InvalidLogin
     }
 }

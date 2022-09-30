@@ -1,6 +1,6 @@
 using System;
 
-namespace OoLunar.Willow.Database.Models
+namespace OoLunar.Willow.Models
 {
     public sealed class HelloModel
     {

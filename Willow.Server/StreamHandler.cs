@@ -1,14 +1,18 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Net.Quic;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using OoLunar.Willow.Database;
-using OoLunar.Willow.Database.Models;
-using OoLunar.Willow.Net.Payloads;
+using OoLunar.Willow.Models;
+using OoLunar.Willow.Models.Actions;
+using OoLunar.Willow.Payloads;
+using OoLunar.Willow.Server.Actions;
 
-namespace OoLunar.Willow.Net
+namespace OoLunar.Willow.Server
 {
     /// <summary>
     /// Handles incoming QUIC streams, authenticates a user and idles the connection waiting for commands.
@@ -37,6 +41,17 @@ namespace OoLunar.Willow.Net
         public UserModel? User { get; private set; }
 
         /// <summary>
+        /// Which count of the keep alive request this is.
+        /// </summary>
+        public byte ExpectedKeepAliveId { get; private set; }
+
+        private static readonly IReadOnlyDictionary<ActionFlags, Type> Actions = new Dictionary<ActionFlags, Type>
+        {
+            { ActionFlags.ExecuteCommand, typeof(ExecuteCommandAction) },
+            { ActionFlags.AlterSettings, typeof(AlterSettingsAction) }
+        };
+
+        /// <summary>
         /// Creates a new stream handler.
         /// </summary>
         /// <param name="database">The database used to grab the user's information.</param>
@@ -56,13 +71,19 @@ namespace OoLunar.Willow.Net
         {
             // See remarks for the use of CancellationToken.None
             Stream = await Connection.AcceptInboundStreamAsync(CancellationToken.None);
+            if (Stream.WritesClosed.IsCompleted)
+            {
+                // The stream was closed before we could accept it.
+                Stream.Close();
+                return;
+            }
 
             await JsonSerializer.SerializeAsync(Stream, new HelloPayload(), cancellationToken: CancellationToken.None);
-            HelloModel? helloModel = await JsonSerializer.DeserializeAsync<HelloModel>(Stream, cancellationToken: CancellationToken.None);
+            HelloModel? helloModel = await DeserializeAsync<HelloModel>();
             if (helloModel == null)
             {
                 Database.Logins.Add(new LoginModel(null, null, Connection.RemoteEndPoint, DateTimeOffset.UtcNow, false));
-                await ErrorAndCloseAsync(CloseCode.InvalidHello, "Hello was null", CancellationToken.None);
+                await ErrorAndCloseAsync(CloseCode.InvalidHello, "Hello was null");
                 await Database.SaveChangesAsync(CancellationToken.None);
                 return;
             }
@@ -79,9 +100,13 @@ namespace OoLunar.Willow.Net
         /// <remarks>The login process shouldn't be interrupted. We first test if the cancellation token is cancelled before we start authenticating the user. If it is, send the close code. If it isn't, authenticate the user and pass the cancellation token to the idle method.</remarks>
         public async Task LoginAsync(HelloModel hello, CancellationToken cancellationToken = default)
         {
-            if (cancellationToken.IsCancellationRequested)
+            if (Stream == null)
             {
-                await ErrorAndCloseAsync(CloseCode.ServerShutdown, "Server is shutting down.", CancellationToken.None);
+                throw new InvalidOperationException("Stream is null");
+            }
+            else if (cancellationToken.IsCancellationRequested)
+            {
+                await ErrorAndCloseAsync(CloseCode.ServerShutdown, "Server is shutting down.");
                 return;
             }
 
@@ -89,19 +114,25 @@ namespace OoLunar.Willow.Net
             if (User == null)
             {
                 Database.Logins.Add(new LoginModel(hello.Id, hello.UserAgent, Connection.RemoteEndPoint, DateTimeOffset.UtcNow, false));
-                await ErrorAndCloseAsync(CloseCode.InvalidLogin, "User does not exist", CancellationToken.None);
+                await ErrorAndCloseAsync(CloseCode.InvalidLogin, "User does not exist");
                 await Database.SaveChangesAsync(CancellationToken.None);
             }
             else if (User.PasswordHash != hello.PasswordHash)
             {
                 Database.Logins.Add(new LoginModel(hello.Id, hello.UserAgent, Connection.RemoteEndPoint, DateTimeOffset.UtcNow, false));
-                await ErrorAndCloseAsync(CloseCode.InvalidLogin, "Invalid password", CancellationToken.None);
+                await ErrorAndCloseAsync(CloseCode.InvalidLogin, "Invalid password");
                 await Database.SaveChangesAsync(CancellationToken.None);
             }
+
+            // Welcomes the user, sending the successful login information
+            await JsonSerializer.SerializeAsync(Stream, new WelcomePayload(User!, await Database.Logins.LastOrDefaultAsync(login => login.Id == User!.Id && login.Successful, CancellationToken.None), Database.Commands.Where(command => command.UserId == User!.Id)), cancellationToken: CancellationToken.None);
 
             // Track when the user logged in at
             Database.Logins.Add(new LoginModel(hello.Id, hello.UserAgent, Connection.RemoteEndPoint, DateTimeOffset.UtcNow, true));
             await Database.SaveChangesAsync(CancellationToken.None);
+
+            // Send the user their account
+            await JsonSerializer.SerializeAsync(Stream, User, cancellationToken: CancellationToken.None);
 
             // Wait for commands
             await IdleAsync(cancellationToken);
@@ -113,20 +144,34 @@ namespace OoLunar.Willow.Net
         /// <param name="cancellationToken">Used to close the connection.</param>
         public async Task IdleAsync(CancellationToken cancellationToken = default)
         {
-            cancellationToken.Register(async () => await ErrorAndCloseAsync(CloseCode.ServerShutdown, "Server is shutting down.", CancellationToken.None));
+            if (Stream == null)
+            {
+                throw new InvalidOperationException("Stream is null");
+            }
+            else if (User == null)
+            {
+                throw new InvalidOperationException("User is null");
+            }
+
+            cancellationToken.Register(async () => await ErrorAndCloseAsync(CloseCode.ServerShutdown, "Server is shutting down."));
 
             while (!cancellationToken.IsCancellationRequested)
             {
-                // Idle the connection, waiting for a new payload.
-                while (Stream!.ReadByte() == -1)
+                ActionModel? action = await DeserializeAsync<ActionModel>();
+                if (action is null || !Actions.TryGetValue(action?.Action ?? 0, out Type? actionType))
                 {
-                    await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
+                    await JsonSerializer.SerializeAsync(Stream, new ErrorPayload(ErrorCode.InvalidAction, $"Unknown action type: {(int?)action?.Action}", action), cancellationToken: CancellationToken.None);
+                    return;
                 }
-                // Back up one byte for full deserialization.
-                Stream.Position = 0;
-
-                // TODO: Change from execute command model to execute action model, which can contain commands.
-                await JsonSerializer.DeserializeAsync<ExecuteCommandModel>(Stream, cancellationToken: cancellationToken);
+                else if (actionType != null && actionType.IsSubclassOf(action!.Data!.GetType()))
+                {
+                    IServerAction? serverAction = (IServerAction?)Activator.CreateInstance(actionType);
+                    if (serverAction is null)
+                    {
+                        await JsonSerializer.SerializeAsync(Stream, new ErrorPayload(ErrorCode.ServerError, $"Failed to correctly handle action type: {(int?)action?.Action}", action), cancellationToken: CancellationToken.None);
+                        return;
+                    }
+                }
             }
         }
 
@@ -136,7 +181,7 @@ namespace OoLunar.Willow.Net
         /// <param name="errorCode">The error code to give to the user.</param>
         /// <param name="message">An optional message to be passed during development. Should not be sent when in production.</param>
         /// <param name="cancellationToken">Unsure.</param>
-        private async Task ErrorAndCloseAsync(CloseCode errorCode, string? message = null, CancellationToken cancellationToken = default)
+        private async Task ErrorAndCloseAsync(CloseCode errorCode, string? message = null)
         {
             if (Stream == null)
             {
@@ -144,8 +189,20 @@ namespace OoLunar.Willow.Net
             }
 
             // FIXME: Should cancellationToken be used here if the connection is supposed to close gracefully?
-            await JsonSerializer.SerializeAsync(Stream, new ClosePayload(errorCode, message), cancellationToken: cancellationToken);
+            await JsonSerializer.SerializeAsync(Stream, new ClosePayload(errorCode, message), cancellationToken: CancellationToken.None);
             await Stream.DisposeAsync();
+        }
+
+        private ValueTask<T?> DeserializeAsync<T>()
+        {
+            if (Stream == null)
+            {
+                throw new InvalidOperationException("Stream is null");
+            }
+
+            MemoryStream memoryStream = new();
+            Stream.CopyTo(memoryStream);
+            return JsonSerializer.DeserializeAsync<T>(memoryStream, cancellationToken: CancellationToken.None);
         }
     }
 }
