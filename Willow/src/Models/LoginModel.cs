@@ -3,7 +3,7 @@ using System.Net;
 
 namespace OoLunar.Willow.Models
 {
-    public sealed class LoginModel
+    public class LoginModel
     {
         public Ulid? Id { get; init; }
         public string? UserAgent { get; init; }

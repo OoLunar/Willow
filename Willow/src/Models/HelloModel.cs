@@ -2,7 +2,7 @@ using System;
 
 namespace OoLunar.Willow.Models
 {
-    public sealed class HelloModel
+    public class HelloModel
     {
         public Ulid Id { get; init; }
         public string PasswordHash { get; init; }

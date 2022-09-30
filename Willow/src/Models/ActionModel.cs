@@ -1,6 +1,6 @@
 namespace OoLunar.Willow.Models
 {
-    public sealed class ActionModel
+    public class ActionModel
     {
         public ActionFlags Action { get; init; }
         public object? Data { get; init; }

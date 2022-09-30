@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace OoLunar.Willow.Models.Actions
@@ -6,6 +7,6 @@ namespace OoLunar.Willow.Models.Actions
     public interface IAction
     {
         Ulid CorrelationId { get; init; }
-        Task Execute();
+        Task ExecuteAsync(CancellationToken cancellationToken = default);
     }
 }

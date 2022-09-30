@@ -2,7 +2,7 @@ using System;
 
 namespace OoLunar.Willow.Payloads
 {
-    public sealed class CommandResultPayload
+    public class CommandResultPayload
     {
         public Ulid CommandId { get; init; }
         public Ulid CorrelationId { get; init; }

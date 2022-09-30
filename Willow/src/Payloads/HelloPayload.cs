@@ -2,7 +2,7 @@ using System.Reflection;
 
 namespace OoLunar.Willow.Payloads
 {
-    public sealed class HelloPayload
+    public class HelloPayload
     {
         public string UserAgent { get; init; }
 

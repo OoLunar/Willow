@@ -4,7 +4,7 @@ using OoLunar.Willow.Models;
 
 namespace OoLunar.Willow.Payloads
 {
-    public sealed class WelcomePayload
+    public class WelcomePayload
     {
         public readonly UserModel User;
         public readonly LoginModel? LastSuccessfulLogin;

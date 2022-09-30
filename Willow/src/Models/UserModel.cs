@@ -4,7 +4,7 @@ using System.Globalization;
 
 namespace OoLunar.Willow.Models
 {
-    public sealed class UserModel : ICloneable
+    public class UserModel : ICloneable
     {
         public Ulid Id { get; init; }
         public string DisplayName { get; private set; }

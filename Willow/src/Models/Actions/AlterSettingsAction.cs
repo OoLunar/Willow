@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace OoLunar.Willow.Models.Actions
@@ -14,6 +15,6 @@ namespace OoLunar.Willow.Models.Actions
             NewModel = newModel;
         }
 
-        public virtual Task Execute() => throw new NotImplementedException();
+        public virtual Task ExecuteAsync(CancellationToken cancellationToken = default) => throw new NotImplementedException();
     }
 }

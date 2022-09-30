@@ -3,7 +3,7 @@ using Humanizer;
 
 namespace OoLunar.Willow.Models
 {
-    public sealed class CommandModel
+    public class CommandModel
     {
         public Ulid UserId { get; init; }
         public Ulid CommandId { get; init; }

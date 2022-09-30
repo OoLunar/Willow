@@ -2,7 +2,7 @@ using System;
 
 namespace OoLunar.Willow.Payloads
 {
-    public sealed class ClosePayload
+    public class ClosePayload
     {
         public CloseCode ErrorCode { get; init; }
         public string? Message { get; init; }
