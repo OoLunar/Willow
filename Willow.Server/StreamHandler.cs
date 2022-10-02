@@ -11,6 +11,7 @@ using OoLunar.Willow.Models;
 using OoLunar.Willow.Models.Actions;
 using OoLunar.Willow.Payloads;
 using OoLunar.Willow.Server.Models;
+using OoLunar.Willow.Server.Models.Actions;
 
 namespace OoLunar.Willow.Server
 {
@@ -52,8 +53,9 @@ namespace OoLunar.Willow.Server
 
         private static readonly IReadOnlyDictionary<ActionFlags, Type> Actions = new Dictionary<ActionFlags, Type>
         {
-            { ActionFlags.ExecuteCommand, typeof(ExecuteCommandAction) },
-            { ActionFlags.AlterSettings, typeof(AlterSettingsAction) }
+            [ActionFlags.ExecuteCommand] = typeof(ExecuteCommandAction),
+            [ActionFlags.AlterSettings] = typeof(AlterSettingsAction),
+            [ActionFlags.SetCommand] = typeof(SetCommandServerAction)
         };
 
         /// <summary>
@@ -181,7 +183,7 @@ namespace OoLunar.Willow.Server
                 }
                 else // else for scope
                 {
-                    action.Data.InjectDependencies(User, Connection, Stream, ServiceProvider);
+                    action.Data.InjectDependencies(User, Connection, ServiceProvider);
                     object? result = await action.Data.ExecuteAsync(action.CorrelationId, cancellationToken);
                     await JsonSerializer.SerializeAsync(Stream, new ActionModel(result is ErrorPayload ? ActionFlags.Error : ActionFlags.Result, result), cancellationToken: CancellationToken.None);
                 }

@@ -19,6 +19,7 @@ namespace OoLunar.Willow.Models
     {
         Error,
         Result,
+        SetCommand,
         ExecuteCommand,
         AlterSettings
     }
