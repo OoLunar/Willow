@@ -36,16 +36,17 @@ namespace OoLunar.Willow.Server
         {
             _ = stoppingToken.Register(async () =>
             {
-                _logger.LogInformation("Stopping server");
+                _logger.LogInformation("Stopping server.");
                 if (_listener != null)
                 {
                     await _listener.DisposeAsync();
                 }
+                _logger.LogInformation("Server stopped.");
             });
 
             QuicListenerOptions options = new()
             {
-                ListenEndPoint = IPEndPoint.TryParse(_configuration["ListenEndPoint"]!, out IPEndPoint? listenEndPoint) ? listenEndPoint : new IPEndPoint(IPAddress.Any, 443),
+                ListenEndPoint = IPEndPoint.TryParse(_configuration["ListenEndPoint"]!, out IPEndPoint? listenEndPoint) ? listenEndPoint : new IPEndPoint(IPAddress.Any, 36015),
                 ApplicationProtocols = new List<SslApplicationProtocol>() { SslApplicationProtocol.Http11, SslApplicationProtocol.Http2, SslApplicationProtocol.Http3 },
                 ConnectionOptionsCallback = (QuicConnection connection, SslClientHelloInfo clientHelloInfo, CancellationToken cancellationToken) =>
                 {

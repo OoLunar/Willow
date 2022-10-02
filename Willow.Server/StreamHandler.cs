@@ -182,7 +182,8 @@ namespace OoLunar.Willow.Server
                 else // else for scope
                 {
                     action.Data.InjectDependencies(User, Connection, Stream, ServiceProvider);
-                    await action.Data.ExecuteAsync(cancellationToken);
+                    object? result = await action.Data.ExecuteAsync(action.CorrelationId, cancellationToken);
+                    await JsonSerializer.SerializeAsync(Stream, new ActionModel(result is ErrorPayload ? ActionFlags.Error : ActionFlags.Result, result), cancellationToken: CancellationToken.None);
                 }
             }
         }
@@ -200,7 +201,6 @@ namespace OoLunar.Willow.Server
                 throw new InvalidOperationException("Stream is null");
             }
 
-            // FIXME: Should cancellationToken be used here if the connection is supposed to close gracefully?
             await JsonSerializer.SerializeAsync(Stream, new ClosePayload(errorCode, message), cancellationToken: CancellationToken.None);
             await Stream.DisposeAsync();
         }

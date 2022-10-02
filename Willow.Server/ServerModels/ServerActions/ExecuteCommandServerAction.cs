@@ -5,7 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Net.Quic;
 using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -20,26 +19,23 @@ namespace OoLunar.Willow.Server.Models.Actions
     {
         private UserModel _currentUser = null!;
         private QuicConnection _connection = null!;
-        private QuicStream _stream = null!;
         private DatabaseContext _database = null!;
 
         public ExecuteCommandServerAction(Ulid commandId, Dictionary<string, string>? arguments) : base(commandId, arguments) { }
 
-        public void InjectDependencies(UserModel currentUser, QuicConnection connection, QuicStream stream, IServiceProvider serviceProvider)
+        public void InjectDependencies(UserModel currentUser, QuicConnection connection, IServiceProvider serviceProvider)
         {
             _currentUser = currentUser;
             _connection = connection;
-            _stream = stream;
             _database = serviceProvider.GetRequiredService<DatabaseContext>();
         }
 
-        public override async Task ExecuteAsync(CancellationToken cancellationToken = default)
+        public async Task<object?> ExecuteAsync(Ulid correlationId, CancellationToken cancellationToken = default)
         {
             CommandModel? command = await _database.Commands.FirstOrDefaultAsync(command => command.CommandId == CommandId && command.UserId == _currentUser.Id, CancellationToken.None);
             if (command == null)
             {
-                await JsonSerializer.SerializeAsync(_stream, new ErrorPayload(ErrorCode.InvalidData, $"Command {CommandId} does not exist"), cancellationToken: CancellationToken.None);
-                return;
+                return new ErrorPayload(ErrorCode.InvalidData, $"Command {CommandId} does not exist");
             }
 
             Process process = new()
@@ -59,28 +55,32 @@ namespace OoLunar.Willow.Server.Models.Actions
             CancellationTokenSource cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             if (command.Flags.HasFlag(CommandFlags.SendOutput))
             {
-                QuicStream quicStream = await _connection.OpenOutboundStreamAsync(QuicStreamType.Bidirectional, cancellationTokenSource.Token);
-                process.OutputDataReceived += async (sender, data) => await CopyToStreamAsync(quicStream, data.Data, cancellationToken);
-                process.ErrorDataReceived += async (sender, data) => await CopyToStreamAsync(quicStream, data.Data, cancellationToken);
-
-                while (!cancellationTokenSource.IsCancellationRequested)
+                Task task = Task.Run(async () =>
                 {
-                    byte[] buffer = new byte[1024];
-                    await quicStream.ReadAsync(buffer, cancellationTokenSource.Token);
-                    await process.StandardInput.WriteAsync(Encoding.UTF8.GetString(buffer));
-                }
+                    QuicStream quicStream = await _connection.OpenOutboundStreamAsync(QuicStreamType.Bidirectional, cancellationTokenSource.Token);
+                    process.OutputDataReceived += async (sender, data) => await CopyToStreamAsync(quicStream, data.Data, cancellationToken);
+                    process.ErrorDataReceived += async (sender, data) => await CopyToStreamAsync(quicStream, data.Data, cancellationToken);
+
+                    while (!cancellationTokenSource.IsCancellationRequested)
+                    {
+                        byte[] buffer = new byte[1024];
+                        await quicStream.ReadAsync(buffer, cancellationTokenSource.Token);
+                        await process.StandardInput.WriteAsync(Encoding.UTF8.GetString(buffer));
+                    }
+                }, cancellationTokenSource.Token);
             }
 
             process.Start();
-            await process.WaitForExitAsync(cancellationTokenSource.Token);
-            await JsonSerializer.SerializeAsync(_stream, new CommandResultPayload
+            await process.WaitForExitAsync(cancellationToken);
+            cancellationTokenSource.Cancel(false);
+            return new CommandResultPayload
             {
                 CommandId = command.CommandId,
-                CorrelationId = CorrelationId,
+                CorrelationId = correlationId,
                 ExitCode = process.ExitCode,
                 StartedAt = process.StartTime,
                 FinishedAt = process.ExitTime
-            }, cancellationToken: CancellationToken.None);
+            };
         }
 
         private static ValueTask CopyToStreamAsync(Stream stream, string? args, CancellationToken cancellationToken = default) => stream == null

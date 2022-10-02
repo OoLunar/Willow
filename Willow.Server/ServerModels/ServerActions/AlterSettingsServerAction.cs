@@ -1,6 +1,5 @@
 using System;
 using System.Net.Quic;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -15,54 +14,46 @@ namespace OoLunar.Willow.Server.Models.Actions
     {
         private UserModel _currentUser = null!;
         private DatabaseContext _database = null!;
-        private QuicStream _stream = null!;
 
         public AlterSettingsServerAction(UserModel newModel) : base(newModel) { }
 
-        public void InjectDependencies(UserModel currentUser, QuicConnection connection, QuicStream stream, IServiceProvider serviceProvider)
+        public void InjectDependencies(UserModel currentUser, QuicConnection connection, IServiceProvider serviceProvider)
         {
             _currentUser = currentUser;
-            _stream = stream;
             _database = serviceProvider.GetRequiredService<DatabaseContext>();
         }
 
-        public override async Task ExecuteAsync(CancellationToken cancellationToken = default)
+        public async Task<object?> ExecuteAsync(Ulid correlationId, CancellationToken cancellationToken = default)
         {
-            if (_currentUser.Id != NewModel.Id && !NewModel.Flags.HasFlag(UserFlags.Admin))
+            if (_currentUser.Id != NewModel.Id && !_currentUser.Flags.HasFlag(UserFlags.Admin))
             {
-                await JsonSerializer.SerializeAsync(_stream, new ErrorPayload(ErrorCode.Unauthorized, "Lack of admin permissions"), cancellationToken: CancellationToken.None);
-                return;
-            }
-            else if (_currentUser.Flags.HasFlag(UserFlags.Admin) && !NewModel.Flags.HasFlag(UserFlags.Admin))
-            {
-                await JsonSerializer.SerializeAsync(_stream, new ErrorPayload(ErrorCode.Unauthorized, "Lack of admin permissions"), cancellationToken: CancellationToken.None);
-                return;
+                return new ErrorPayload(ErrorCode.Unauthorized, "Lack of admin permissions");
             }
 
-            UserModel? alteredUser = await _database.Users.FirstOrDefaultAsync(user => user.Id == _currentUser.Id, CancellationToken.None);
+            UserModel? alteredUser = await _database.Users.FirstOrDefaultAsync(user => user.Id == NewModel.Id, CancellationToken.None);
             if (alteredUser == null)
             {
-                await JsonSerializer.SerializeAsync(_stream, new ErrorPayload(ErrorCode.InvalidData, $"User {_currentUser.Id} does not exist"), cancellationToken: CancellationToken.None);
-                return;
+                return new ErrorPayload(ErrorCode.InvalidData, $"User {NewModel.Id} does not exist");
             }
-            else if (!alteredUser.TrySetDisplayName(_currentUser.DisplayName, out string? errorMessage))
+            else if (!_currentUser.Flags.HasFlag(UserFlags.Admin) && alteredUser.Flags.HasFlag(UserFlags.Admin))
             {
-                await JsonSerializer.SerializeAsync(_stream, new ErrorPayload(ErrorCode.InvalidData, errorMessage), cancellationToken: CancellationToken.None);
-                return;
+                return new ErrorPayload(ErrorCode.Unauthorized, "Lack of admin permissions");
             }
-            else if (!alteredUser.TrySetPasswordHash(_currentUser.PasswordHash, out errorMessage))
+            else if (!alteredUser.TrySetDisplayName(NewModel.DisplayName, out string? errorMessage))
             {
-                await JsonSerializer.SerializeAsync(_stream, new ErrorPayload(ErrorCode.InvalidData, errorMessage), cancellationToken: CancellationToken.None);
-                return;
+                return new ErrorPayload(ErrorCode.InvalidData, errorMessage);
             }
-            else if (!alteredUser.TrySetFlags(_currentUser.Flags, out errorMessage))
+            else if (!alteredUser.TrySetPasswordHash(NewModel.PasswordHash, out errorMessage))
             {
-                await JsonSerializer.SerializeAsync(_stream, new ErrorPayload(ErrorCode.InvalidData, errorMessage), cancellationToken: CancellationToken.None);
-                return;
+                return new ErrorPayload(ErrorCode.InvalidData, errorMessage);
+            }
+            else if (!alteredUser.TrySetFlags(NewModel.Flags, out errorMessage))
+            {
+                return new ErrorPayload(ErrorCode.InvalidData, errorMessage);
             }
 
             await _database.SaveChangesAsync(CancellationToken.None);
-            await JsonSerializer.SerializeAsync(_stream, alteredUser, cancellationToken: CancellationToken.None);
+            return alteredUser;
         }
     }
 }

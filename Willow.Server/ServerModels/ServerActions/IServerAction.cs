@@ -1,12 +1,14 @@
 using System;
 using System.Net.Quic;
+using System.Threading;
+using System.Threading.Tasks;
 using OoLunar.Willow.Models;
-using OoLunar.Willow.Models.Actions;
 
 namespace OoLunar.Willow.Server.Models.Actions
 {
-    public interface IServerAction : IAction
+    public interface IServerAction
     {
-        void InjectDependencies(UserModel currentUser, QuicConnection connection, QuicStream stream, IServiceProvider serviceProvider);
+        void InjectDependencies(UserModel currentUser, QuicConnection connection, IServiceProvider serviceProvider);
+        Task<object?> ExecuteAsync(Ulid correlationId, CancellationToken cancellationToken = default);
     }
 }
