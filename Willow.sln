@@ -7,8 +7,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Willow", "Willow\Willow.csp
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Willow.Server", "Willow.Server\Willow.Server.csproj", "{F3BCCAAF-6BF2-4E56-BAAD-A386DD0A9384}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Willow.Test", "Willow.Test\Willow.Test.csproj", "{6EA9FBA8-5B5E-43A5-9DDC-C054A76E68AD}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,9 +24,5 @@ Global
 		{F3BCCAAF-6BF2-4E56-BAAD-A386DD0A9384}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F3BCCAAF-6BF2-4E56-BAAD-A386DD0A9384}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F3BCCAAF-6BF2-4E56-BAAD-A386DD0A9384}.Release|Any CPU.Build.0 = Release|Any CPU
-		{6EA9FBA8-5B5E-43A5-9DDC-C054A76E68AD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{6EA9FBA8-5B5E-43A5-9DDC-C054A76E68AD}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{6EA9FBA8-5B5E-43A5-9DDC-C054A76E68AD}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{6EA9FBA8-5B5E-43A5-9DDC-C054A76E68AD}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
